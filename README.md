@@ -30,7 +30,8 @@ Defaults:
 
 - Address: `http://127.0.0.1:62774/v1`
 - Local bearer token: `local-grok-subscription`
-- Public/upstream model: `grok-build`
+- Public Codex alias: `grok-build`
+- Upstream subscription model: `grok-4.6`
 
 Environment overrides include `HOST`, `PORT`, `GROK_CODEX_PROXY_KEY`,
 `PUBLIC_MODEL`, `GROK_MODEL`, `GROK_BINARY`, `GROK_AUTH_PATH`, and
@@ -115,8 +116,9 @@ the refreshed token automatically.
 
 ## Current scope
 
-- Responses text output
+- Responses text output through subscription-backed Grok 4.6
 - Responses image input through structured Chat Completions `image_url` blocks
+- Desktop-selectable reasoning effort (`none`, `low`, `medium`, `high`, `xhigh`)
 - Function tool calls and function-call outputs
 - Responses SSE event framing (buffered upstream; emitted after Grok completes)
 - Grok OAuth refresh retry

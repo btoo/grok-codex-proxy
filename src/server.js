@@ -98,6 +98,8 @@ function requestMetrics(request, requestBytes) {
   return {
     requestBytes,
     upstreamBytes: Buffer.byteLength(JSON.stringify(request)),
+    upstreamModel: request.model,
+    reasoningEffort: request.reasoning_effort || "default",
     messageCount: request.messages.length,
     toolCount: request.tools?.length || 0,
     imageCount
@@ -106,7 +108,11 @@ function requestMetrics(request, requestBytes) {
 
 function writeRequestLog(logger, level, fields) {
   const method = typeof logger?.[level] === "function" ? level : "log";
-  logger?.[method]?.(`[grok-codex-proxy] ${JSON.stringify({ event: "request", ...fields })}`);
+  logger?.[method]?.(`[grok-codex-proxy] ${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event: "request",
+    ...fields
+  })}`);
 }
 
 export function createProxyServer(options = {}) {
@@ -115,7 +121,7 @@ export function createProxyServer(options = {}) {
     port: Number(options.port ?? process.env.PORT ?? 62774),
     localToken: options.localToken ?? process.env.GROK_CODEX_PROXY_KEY ?? "local-grok-subscription",
     publicModel: options.publicModel || process.env.PUBLIC_MODEL || "grok-build",
-    upstreamModel: options.upstreamModel || process.env.GROK_MODEL || "grok-build",
+    upstreamModel: options.upstreamModel || process.env.GROK_MODEL || "grok-4.6",
     upstreamUrl: options.upstreamUrl || process.env.GROK_UPSTREAM_URL || DEFAULT_UPSTREAM,
     maxRequestBytes: Number(options.maxRequestBytes ?? process.env.MAX_REQUEST_BYTES ?? 8 * 1024 * 1024),
     upstreamTimeoutMs: Number(
@@ -137,11 +143,15 @@ export function createProxyServer(options = {}) {
           models: [
             {
               slug: config.publicModel,
-              display_name: "Grok Build (subscription)",
-              description: "Grok Build through the local subscription proxy",
+              display_name: "Grok 4.6 (subscription)",
+              description: "Grok 4.6 through the local subscription proxy",
               default_reasoning_level: "none",
               supported_reasoning_levels: [
-                { effort: "none", description: "Grok Build model default" }
+                { effort: "none", description: "Use the Grok upstream default" },
+                { effort: "low", description: "Faster responses with less reasoning" },
+                { effort: "medium", description: "Balanced reasoning and latency" },
+                { effort: "high", description: "More reasoning for difficult tasks" },
+                { effort: "xhigh", description: "Maximum Grok reasoning effort" }
               ],
               shell_type: "shell_command",
               visibility: "list",
@@ -162,6 +172,7 @@ export function createProxyServer(options = {}) {
               apply_patch_tool_type: null,
               web_search_tool_type: "text",
               truncation_policy: { mode: "tokens", limit: 220000 },
+              supports_parallel_tool_calls: true,
               supports_image_detail_original: false,
               context_window: 256000,
               max_context_window: 256000,
@@ -174,7 +185,7 @@ export function createProxyServer(options = {}) {
               node_repl_auto_review_required: false,
               node_repl_disabled: false,
               base_instructions:
-                "You are Grok Build running as the model behind Codex. Follow the supplied user and developer instructions, use the provided tools precisely, and continue until the task is complete."
+                "You are Grok 4.6 running as the model behind Codex. Follow the supplied user and developer instructions, use the provided tools precisely, and continue until the task is complete."
             }
           ]
         });
@@ -191,7 +202,15 @@ export function createProxyServer(options = {}) {
       const clientAbort = new AbortController();
       let status = 500;
       let outcome = "proxy_error";
-      let metrics = { requestBytes: 0, upstreamBytes: 0, messageCount: 0, toolCount: 0, imageCount: 0 };
+      let metrics = {
+        requestBytes: 0,
+        upstreamBytes: 0,
+        upstreamModel: config.upstreamModel,
+        reasoningEffort: "unknown",
+        messageCount: 0,
+        toolCount: 0,
+        imageCount: 0
+      };
       let errorName;
       const abortForDisconnect = () => {
         if (!res.writableEnded) clientAbort.abort(new Error("Client disconnected"));

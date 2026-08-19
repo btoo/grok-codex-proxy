@@ -31,7 +31,25 @@ test("translates Codex function definitions to Chat Completions tools", () => {
   assert.equal(request.messages[1].content, "Use the tool");
   assert.equal(request.tools.length, 1);
   assert.equal(request.tools[0].function.name, "read_file");
+  assert.equal(request.reasoning_effort, "high");
+});
+
+test("uses the upstream default for none reasoning effort", () => {
+  const request = buildChatRequest(
+    { input: "Be quick", reasoning: { effort: "none" } },
+    "grok-build"
+  );
   assert.equal(request.reasoning_effort, undefined);
+});
+
+test("rejects unsupported Grok reasoning effort values", () => {
+  assert.throws(
+    () => buildChatRequest(
+      { input: "Think", reasoning: { effort: "max" } },
+      "grok-build"
+    ),
+    /Unsupported Grok reasoning effort: max/
+  );
 });
 
 test("translates Responses function-call history back to Chat messages", () => {

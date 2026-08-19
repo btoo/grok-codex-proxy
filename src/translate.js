@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+const GROK_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+
 function textFromContent(content) {
   if (typeof content === "string") {
     return content;
@@ -186,6 +188,13 @@ export function buildChatRequest(body, upstreamModel) {
   }
   if (typeof body.temperature === "number") request.temperature = body.temperature;
   if (typeof body.top_p === "number") request.top_p = body.top_p;
+  const reasoningEffort = body.reasoning?.effort;
+  if (reasoningEffort && reasoningEffort !== "none") {
+    if (!GROK_REASONING_EFFORTS.has(reasoningEffort)) {
+      throw invalidInput(`Unsupported Grok reasoning effort: ${reasoningEffort}`);
+    }
+    request.reasoning_effort = reasoningEffort;
+  }
   return request;
 }
 

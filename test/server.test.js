@@ -87,8 +87,27 @@ test("serves the Codex model-catalog shape", async () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.models[0].slug, "grok-build");
+    assert.equal(body.models[0].display_name, "Grok 4.6 (subscription)");
     assert.equal(body.models[0].shell_type, "shell_command");
+    assert.equal(body.models[0].supports_parallel_tool_calls, true);
     assert.equal(body.models[0].context_window, 256000);
+    assert.deepEqual(
+      body.models[0].supported_reasoning_levels.map(({ effort }) => effort),
+      ["none", "low", "medium", "high", "xhigh"]
+    );
+  });
+});
+
+test("forwards Codex reasoning effort to Grok Chat Completions", async () => {
+  await withServer(async ({ port, getCapturedRequest }) => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ input: "Think carefully", reasoning: { effort: "xhigh" } })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(getCapturedRequest().model, "grok-4.6");
+    assert.equal(getCapturedRequest().reasoning_effort, "xhigh");
   });
 });
 
@@ -164,6 +183,8 @@ test("logs request metadata without logging prompt content or credentials", asyn
   assert.equal(entries.length, 1);
   assert.match(entries[0], /\"status\":200/);
   assert.match(entries[0], /\"requestBytes\":/);
+  assert.match(entries[0], /\"upstreamModel\":\"grok-4\.6\"/);
+  assert.match(entries[0], /\"reasoningEffort\":\"default\"/);
   assert.doesNotMatch(entries[0], /super-secret-prompt|test-token|Bearer upstream/);
 });
 
