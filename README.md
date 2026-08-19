@@ -116,9 +116,12 @@ the refreshed token automatically.
 ## Current scope
 
 - Responses text output
+- Responses image input through structured Chat Completions `image_url` blocks
 - Function tool calls and function-call outputs
 - Responses SSE event framing (buffered upstream; emitted after Grok completes)
 - Grok OAuth refresh retry
+- Sanitized per-request timing, size, tool, image, status, and timeout logs
+- Upstream cancellation when the Codex client disconnects
 
 The adapter intentionally ignores provider-native `web_search` tools because
 Codex cannot execute those as local function calls. All ordinary Codex function
