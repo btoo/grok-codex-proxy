@@ -70,6 +70,44 @@ test("serves a streaming Responses function call", async () => {
   });
 });
 
+test("serves a streaming Responses custom tool call", async () => {
+  const fetchImpl = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    assert.equal(request.tools[0].function.name, "exec");
+    return new Response(JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "call_exec",
+            type: "function",
+            function: { name: "exec", arguments: '{"input":"text(42);"}' }
+          }]
+        },
+        finish_reason: "tool_calls"
+      }]
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  await withServer(async ({ port }) => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        input: "Use exec",
+        tools: [{ type: "custom", name: "exec", description: "Execute JavaScript" }],
+        stream: true
+      })
+    });
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /response\.custom_tool_call_input\.done/);
+    assert.match(text, /"type":"custom_tool_call"/);
+    assert.match(text, /text\(42\);/);
+  }, { fetchImpl });
+});
+
 test("rejects the OpenAI bearer token when the local token is configured", async () => {
   await withServer(async ({ port }) => {
     const response = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
@@ -90,6 +128,9 @@ test("serves the Codex model-catalog shape", async () => {
     assert.equal(body.models[0].display_name, "Grok 4.6 (subscription)");
     assert.equal(body.models[0].shell_type, "shell_command");
     assert.equal(body.models[0].supports_parallel_tool_calls, true);
+    assert.equal(body.models[0].include_plugin_usage_instructions, true);
+    assert.equal(body.models[0].include_apps_usage_instructions, true);
+    assert.equal(body.models[0].tool_mode, "code_mode_only");
     assert.equal(body.models[0].context_window, 256000);
     assert.deepEqual(
       body.models[0].supported_reasoning_levels.map(({ effort }) => effort),

@@ -59,6 +59,26 @@ export function streamCompletedResponse(res, response) {
         output_index: outputIndex,
         arguments: item.arguments
       });
+    } else if (item.type === "custom_tool_call") {
+      writeSse(res, {
+        type: "response.output_item.added",
+        output_index: outputIndex,
+        item: { ...item, status: "in_progress", input: "" }
+      });
+      if (item.input) {
+        writeSse(res, {
+          type: "response.custom_tool_call_input.delta",
+          item_id: item.id,
+          output_index: outputIndex,
+          delta: item.input
+        });
+      }
+      writeSse(res, {
+        type: "response.custom_tool_call_input.done",
+        item_id: item.id,
+        output_index: outputIndex,
+        input: item.input
+      });
     }
 
     writeSse(res, {

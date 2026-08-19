@@ -153,21 +153,49 @@ export function responsesInputToMessages(body) {
 
 export function responsesToolsToChatTools(tools = []) {
   return tools
-    .filter((tool) => tool?.type === "function" && tool.name)
-    .map((tool) => ({
-      type: "function",
-      function: {
-        name: tool.name,
-        description: tool.description || "",
-        parameters: tool.parameters || { type: "object", properties: {} },
-        ...(typeof tool.strict === "boolean" ? { strict: tool.strict } : {})
+    .filter((tool) => ["function", "custom"].includes(tool?.type) && tool.name)
+    .map((tool) => {
+      if (tool.type === "custom") {
+        return {
+          type: "function",
+          function: {
+            name: tool.name,
+            description: [
+              tool.description || "",
+              "Return this custom tool's raw input in the required input string field."
+            ].filter(Boolean).join("\n\n"),
+            parameters: {
+              type: "object",
+              properties: {
+                input: {
+                  type: "string",
+                  description: "The exact raw input to send to the custom tool."
+                }
+              },
+              required: ["input"],
+              additionalProperties: false
+            }
+          }
+        };
       }
-    }));
+      return {
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description || "",
+          parameters: tool.parameters || { type: "object", properties: {} },
+          ...(typeof tool.strict === "boolean" ? { strict: tool.strict } : {})
+        }
+      };
+    });
 }
 
 export function responsesToolChoiceToChatChoice(choice) {
   if (["auto", "none", "required"].includes(choice)) return choice;
   if (choice?.type === "function" && choice.name) {
+    return { type: "function", function: { name: choice.name } };
+  }
+  if (choice?.type === "custom" && choice.name) {
     return { type: "function", function: { name: choice.name } };
   }
   return "auto";
@@ -213,15 +241,39 @@ function usageFromChat(usage) {
   };
 }
 
-function normalizeToolCalls(toolCalls = []) {
-  return toolCalls.map((call) => ({
-    id: `fc_${randomUUID()}`,
-    type: "function_call",
-    status: "completed",
-    call_id: call.id || `call_${randomUUID()}`,
-    name: call.function?.name || "unknown_tool",
-    arguments: call.function?.arguments || "{}"
-  }));
+function customToolInput(argumentsText) {
+  try {
+    const parsed = JSON.parse(argumentsText || "{}");
+    return typeof parsed?.input === "string" ? parsed.input : argumentsText || "";
+  } catch {
+    return argumentsText || "";
+  }
+}
+
+function normalizeToolCalls(toolCalls = [], customToolNames = new Set()) {
+  return toolCalls.map((call) => {
+    const name = call.function?.name || "unknown_tool";
+    const callId = call.id || `call_${randomUUID()}`;
+    const argumentsText = call.function?.arguments || "{}";
+    if (customToolNames.has(name)) {
+      return {
+        id: `ctc_${randomUUID()}`,
+        type: "custom_tool_call",
+        status: "completed",
+        call_id: callId,
+        name,
+        input: customToolInput(argumentsText)
+      };
+    }
+    return {
+      id: `fc_${randomUUID()}`,
+      type: "function_call",
+      status: "completed",
+      call_id: callId,
+      name,
+      arguments: argumentsText
+    };
+  });
 }
 
 export function chatResponseToResponse(body, chatResponse, options = {}) {
@@ -229,6 +281,9 @@ export function chatResponseToResponse(body, chatResponse, options = {}) {
   const model = options.model || body.model || "grok-build";
   const message = chatResponse?.choices?.[0]?.message || {};
   const output = [];
+  const customToolNames = new Set(
+    (body.tools || []).filter((tool) => tool?.type === "custom" && tool.name).map((tool) => tool.name)
+  );
 
   if (typeof message.content === "string" && message.content.length) {
     output.push({
@@ -239,7 +294,7 @@ export function chatResponseToResponse(body, chatResponse, options = {}) {
       content: [{ type: "output_text", text: message.content, annotations: [] }]
     });
   }
-  output.push(...normalizeToolCalls(message.tool_calls));
+  output.push(...normalizeToolCalls(message.tool_calls, customToolNames));
 
   return {
     id: responseId,

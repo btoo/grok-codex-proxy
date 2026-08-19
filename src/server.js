@@ -163,8 +163,8 @@ export function createProxyServer(options = {}) {
               availability_nux: null,
               upgrade: null,
               include_skills_usage_instructions: false,
-              include_plugin_usage_instructions: false,
-              include_apps_usage_instructions: false,
+              include_plugin_usage_instructions: true,
+              include_apps_usage_instructions: true,
               supports_reasoning_summary_parameter: false,
               default_reasoning_summary: "none",
               support_verbosity: false,
@@ -184,6 +184,7 @@ export function createProxyServer(options = {}) {
               use_responses_lite: false,
               node_repl_auto_review_required: false,
               node_repl_disabled: false,
+              tool_mode: "code_mode_only",
               base_instructions:
                 "You are Grok 4.6 running as the model behind Codex. Follow the supplied user and developer instructions, use the provided tools precisely, and continue until the task is complete."
             }
