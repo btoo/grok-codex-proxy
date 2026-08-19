@@ -81,8 +81,8 @@ const configPath = path.join(codexHome, "config.toml");
 const profile = `model_provider = "grok_subscription"
 model = "grok-build"
 model_reasoning_effort = "none"
-model_context_window = 256000
-model_auto_compact_token_limit = 220000
+model_context_window = 500000
+model_auto_compact_token_limit = 400000
 ${providerBlock()}`;
 
 const servicePath = process.env.PATH || [path.dirname(grokBinary), path.dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
@@ -144,8 +144,8 @@ if (makeDefault) {
   config = setTopLevel(config, "model_provider", '"grok_subscription"');
   config = setTopLevel(config, "model", '"grok-build"');
   config = setTopLevel(config, "model_reasoning_effort", '"none"');
-  config = setTopLevel(config, "model_context_window", "256000");
-  config = setTopLevel(config, "model_auto_compact_token_limit", "220000");
+  config = setTopLevel(config, "model_context_window", "500000");
+  config = setTopLevel(config, "model_auto_compact_token_limit", "400000");
   if (!config.includes("[model_providers.grok_subscription]")) config += providerBlock();
   writeFileSync(configPath, config, { mode: 0o600 });
 }

@@ -32,6 +32,7 @@ Defaults:
 - Local bearer token: `local-grok-subscription`
 - Public Codex alias: `grok-build`
 - Upstream subscription model: `grok-4.6`
+- Context window: 500,000 tokens, with automatic compaction at 400,000
 
 Environment overrides include `HOST`, `PORT`, `GROK_CODEX_PROXY_KEY`,
 `PUBLIC_MODEL`, `GROK_MODEL`, `GROK_BINARY`, `GROK_AUTH_PATH`, and
@@ -93,6 +94,10 @@ codex exec --profile grok-subscription "your task"
 The Desktop app reads the default selection from `~/.codex/config.toml` for
 new tasks. Restart the app if the model picker or a newly created task still
 shows the prior provider.
+
+The installer configures Grok 4.6's 500,000-token context window and begins
+automatic compaction at 400,000 tokens, matching the upstream model catalog's
+80% threshold while preserving room for tool results and model output.
 
 The proxy advertises the Grok model as a Codex Code Mode model. This lets
 Codex expose its custom `exec` tool, including plugin-backed capabilities such
