@@ -134,6 +134,7 @@ the refreshed token automatically.
 - Desktop-selectable reasoning effort (`none`, `low`, `medium`, `high`, `xhigh`)
 - Function tool calls and function-call outputs
 - Code Mode custom tool calls, bridged through Grok-compatible function calls
+- Code Mode runtime guidance and safe rejection of malformed custom-tool arguments
 - Plugin and app usage instructions, including in-app browser workflows
 - Responses SSE event framing (buffered upstream; emitted after Grok completes)
 - Grok OAuth refresh retry

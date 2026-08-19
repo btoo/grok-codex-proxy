@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 const GROK_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+const CODE_MODE_EXEC_GUIDANCE = [
+  "Codex Code Mode contract for exec:",
+  "- Send JavaScript source in the required input string; never send JSON tool arguments such as {\"cmd\":\"...\"}.",
+  "- The exec runtime is a fresh V8 isolate without Node.js require(), import statements, filesystem APIs, or network APIs.",
+  "- Call nested tools with await tools.<tool_name>(...), then expose every result with text(...), image(...), audio(...), or generatedImage(...).",
+  "- Do not use a top-level return statement. Use tools.exec_command for shell or filesystem work and an exposed Node REPL tool when Node.js APIs are required."
+].join("\n");
 
 function textFromContent(content) {
   if (typeof content === "string") {
@@ -28,6 +35,13 @@ function textFromContent(content) {
 
 function invalidInput(message) {
   return Object.assign(new Error(message), { status: 400 });
+}
+
+function invalidUpstreamToolCall(name) {
+  return Object.assign(
+    new Error(`Grok returned invalid arguments for custom tool ${name}; expected {"input":"..."}`),
+    { status: 502 }
+  );
 }
 
 function imageUrlPart(part) {
@@ -156,11 +170,13 @@ export function responsesToolsToChatTools(tools = []) {
     .filter((tool) => ["function", "custom"].includes(tool?.type) && tool.name)
     .map((tool) => {
       if (tool.type === "custom") {
+        const isCodeModeExec = tool.name === "exec";
         return {
           type: "function",
           function: {
             name: tool.name,
             description: [
+              isCodeModeExec ? CODE_MODE_EXEC_GUIDANCE : "",
               tool.description || "",
               "Return this custom tool's raw input in the required input string field."
             ].filter(Boolean).join("\n\n"),
@@ -169,7 +185,9 @@ export function responsesToolsToChatTools(tools = []) {
               properties: {
                 input: {
                   type: "string",
-                  description: "The exact raw input to send to the custom tool."
+                  description: isCodeModeExec
+                    ? "JavaScript source for the Codex V8 isolate. Never pass JSON tool arguments; emit nested tool results with text(...)."
+                    : "The exact raw input to send to the custom tool."
                 }
               },
               required: ["input"],
@@ -241,13 +259,15 @@ function usageFromChat(usage) {
   };
 }
 
-function customToolInput(argumentsText) {
+function customToolInput(argumentsText, name) {
+  let parsed;
   try {
-    const parsed = JSON.parse(argumentsText || "{}");
-    return typeof parsed?.input === "string" ? parsed.input : argumentsText || "";
+    parsed = JSON.parse(argumentsText || "{}");
   } catch {
-    return argumentsText || "";
+    throw invalidUpstreamToolCall(name);
   }
+  if (typeof parsed?.input !== "string") throw invalidUpstreamToolCall(name);
+  return parsed.input;
 }
 
 function normalizeToolCalls(toolCalls = [], customToolNames = new Set()) {
@@ -262,7 +282,7 @@ function normalizeToolCalls(toolCalls = [], customToolNames = new Set()) {
         status: "completed",
         call_id: callId,
         name,
-        input: customToolInput(argumentsText)
+        input: customToolInput(argumentsText, name)
       };
     }
     return {

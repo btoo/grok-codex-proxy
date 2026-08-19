@@ -186,7 +186,7 @@ export function createProxyServer(options = {}) {
               node_repl_disabled: false,
               tool_mode: "code_mode_only",
               base_instructions:
-                "You are Grok 4.6 running as the model behind Codex. Follow the supplied user and developer instructions, use the provided tools precisely, and continue until the task is complete."
+                "You are Grok 4.6 running as the model behind Codex. Follow the supplied user and developer instructions, use the provided tools precisely, and continue until the task is complete. For the exec custom tool, send JavaScript source in its input string, never JSON tool arguments. The exec runtime is a fresh V8 isolate without require(), import statements, filesystem APIs, or network APIs. Call nested tools with await tools.<tool_name>(...) and expose their results with text(...), image(...), audio(...), or generatedImage(...). Do not use a top-level return statement; use tools.exec_command for shell or filesystem work."
             }
           ]
         });
