@@ -13,16 +13,69 @@ function textFromContent(content) {
       if (typeof part === "string") return part;
       if (["input_text", "output_text", "text"].includes(part?.type)) return part.text || "";
       if (part?.type === "input_image") {
-        const url = part.image_url || part.file_id || "attached image";
-        return `[Image: ${url}]`;
+        return "[Image attachment]";
       }
       if (part?.type === "input_file") {
-        return `[File: ${part.filename || part.file_id || part.file_url || "attached file"}]`;
+        return `[File attachment${part.filename ? `: ${part.filename}` : ""}]`;
       }
       return "";
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function invalidInput(message) {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
+function imageUrlPart(part) {
+  const source = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+  if (!source) {
+    if (part.file_id) {
+      throw invalidInput("Image file IDs are not supported; send an image_url or data URL instead");
+    }
+    throw invalidInput("Image input is missing image_url");
+  }
+  if (source.startsWith("data:") && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(source)) {
+    throw invalidInput("Image data URLs must contain a base64-encoded image");
+  }
+
+  const detail = part.detail || part.image_url?.detail;
+  return {
+    type: "image_url",
+    image_url: {
+      url: source,
+      ...(["auto", "low", "high"].includes(detail) ? { detail } : {})
+    }
+  };
+}
+
+function chatContentFromResponsesContent(content) {
+  if (!Array.isArray(content)) return textFromContent(content);
+
+  const parts = [];
+  let hasImage = false;
+  for (const part of content) {
+    if (typeof part === "string") {
+      if (part) parts.push({ type: "text", text: part });
+      continue;
+    }
+    if (["input_text", "output_text", "text"].includes(part?.type)) {
+      if (part.text) parts.push({ type: "text", text: part.text });
+      continue;
+    }
+    if (["input_image", "image_url"].includes(part?.type)) {
+      parts.push(imageUrlPart(part));
+      hasImage = true;
+      continue;
+    }
+    if (part?.type === "input_file") {
+      throw invalidInput("File inputs are not supported by the Grok subscription proxy");
+    }
+  }
+
+  if (!hasImage) return parts.map((part) => part.text).filter(Boolean).join("\n");
+  return parts;
 }
 
 function toolOutputText(output) {
@@ -81,7 +134,9 @@ export function responsesInputToMessages(body) {
       if (["system", "user", "assistant", "tool"].includes(role)) {
         messages.push({
           role,
-          content: textFromContent(item.content),
+          content: role === "user"
+            ? chatContentFromResponsesContent(item.content)
+            : textFromContent(item.content),
           ...(item.tool_call_id ? { tool_call_id: item.tool_call_id } : {})
         });
       }

@@ -6,6 +6,7 @@ import { buildChatRequest, chatResponseToResponse } from "./translate.js";
 import { streamCompletedResponse } from "./sse.js";
 
 const DEFAULT_UPSTREAM = "https://cli-chat-proxy.grok.com/v1/chat/completions";
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 180_000;
 
 function json(res, status, value) {
   const payload = JSON.stringify(value);
@@ -30,7 +31,7 @@ async function readJsonBody(req, maxBytes) {
   }
   const text = Buffer.concat(chunks).toString("utf8");
   try {
-    return text ? JSON.parse(text) : {};
+    return { body: text ? JSON.parse(text) : {}, bytes: total };
   } catch {
     throw Object.assign(new Error("Invalid JSON request body"), { status: 400 });
   }
@@ -57,14 +58,24 @@ async function parseUpstreamResponse(response) {
   }
 }
 
-async function callGrok({ fetchImpl, credentials, upstreamUrl, upstreamModel, request }) {
+async function callGrok({
+  fetchImpl,
+  credentials,
+  upstreamUrl,
+  upstreamModel,
+  request,
+  signal,
+  timeoutMs
+}) {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const fetchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const headers = await credentials.headers(upstreamModel);
     const response = await fetchImpl(upstreamUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(180_000)
+      signal: fetchSignal
     });
     const payload = await parseUpstreamResponse(response);
     if (response.ok) return payload;
@@ -79,6 +90,25 @@ async function callGrok({ fetchImpl, credentials, upstreamUrl, upstreamModel, re
   throw new Error("Grok authentication retry failed");
 }
 
+function requestMetrics(request, requestBytes) {
+  const imageCount = request.messages.reduce((total, message) => {
+    if (!Array.isArray(message.content)) return total;
+    return total + message.content.filter((part) => part?.type === "image_url").length;
+  }, 0);
+  return {
+    requestBytes,
+    upstreamBytes: Buffer.byteLength(JSON.stringify(request)),
+    messageCount: request.messages.length,
+    toolCount: request.tools?.length || 0,
+    imageCount
+  };
+}
+
+function writeRequestLog(logger, level, fields) {
+  const method = typeof logger?.[level] === "function" ? level : "log";
+  logger?.[method]?.(`[grok-codex-proxy] ${JSON.stringify({ event: "request", ...fields })}`);
+}
+
 export function createProxyServer(options = {}) {
   const config = {
     host: options.host || process.env.HOST || "127.0.0.1",
@@ -87,10 +117,14 @@ export function createProxyServer(options = {}) {
     publicModel: options.publicModel || process.env.PUBLIC_MODEL || "grok-build",
     upstreamModel: options.upstreamModel || process.env.GROK_MODEL || "grok-build",
     upstreamUrl: options.upstreamUrl || process.env.GROK_UPSTREAM_URL || DEFAULT_UPSTREAM,
-    maxRequestBytes: Number(options.maxRequestBytes ?? process.env.MAX_REQUEST_BYTES ?? 8 * 1024 * 1024)
+    maxRequestBytes: Number(options.maxRequestBytes ?? process.env.MAX_REQUEST_BYTES ?? 8 * 1024 * 1024),
+    upstreamTimeoutMs: Number(
+      options.upstreamTimeoutMs ?? process.env.GROK_UPSTREAM_TIMEOUT_MS ?? DEFAULT_UPSTREAM_TIMEOUT_MS
+    )
   };
   const fetchImpl = options.fetchImpl || fetch;
   const credentials = options.credentials || new GrokCredentials();
+  const logger = options.logger || console;
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -152,29 +186,76 @@ export function createProxyServer(options = {}) {
         return openAiError(res, 401, "Invalid local proxy token", "authentication_error");
       }
 
-      const body = await readJsonBody(req, config.maxRequestBytes);
-      const request = buildChatRequest(body, config.upstreamModel);
-      const chatResponse = await callGrok({
-        fetchImpl,
-        credentials,
-        upstreamUrl: config.upstreamUrl,
-        upstreamModel: config.upstreamModel,
-        request
-      });
-      const response = chatResponseToResponse(body, chatResponse, {
-        responseId: `resp_${randomUUID()}`,
-        model: config.publicModel
-      });
+      const requestId = randomUUID();
+      const startedAt = Date.now();
+      const clientAbort = new AbortController();
+      let status = 500;
+      let outcome = "proxy_error";
+      let metrics = { requestBytes: 0, upstreamBytes: 0, messageCount: 0, toolCount: 0, imageCount: 0 };
+      let errorName;
+      const abortForDisconnect = () => {
+        if (!res.writableEnded) clientAbort.abort(new Error("Client disconnected"));
+      };
+      req.once("aborted", abortForDisconnect);
+      res.once("close", abortForDisconnect);
 
-      if (body.stream) {
-        res.writeHead(200, {
-          "content-type": "text/event-stream; charset=utf-8",
-          "cache-control": "no-cache, no-transform",
-          connection: "keep-alive"
+      try {
+        const parsed = await readJsonBody(req, config.maxRequestBytes);
+        const body = parsed.body;
+        const request = buildChatRequest(body, config.upstreamModel);
+        metrics = requestMetrics(request, parsed.bytes);
+        const chatResponse = await callGrok({
+          fetchImpl,
+          credentials,
+          upstreamUrl: config.upstreamUrl,
+          upstreamModel: config.upstreamModel,
+          request,
+          signal: clientAbort.signal,
+          timeoutMs: config.upstreamTimeoutMs
         });
-        return streamCompletedResponse(res, response);
+        const response = chatResponseToResponse(body, chatResponse, {
+          responseId: `resp_${randomUUID()}`,
+          model: config.publicModel
+        });
+
+        status = 200;
+        outcome = "ok";
+        if (body.stream) {
+          res.writeHead(200, {
+            "content-type": "text/event-stream; charset=utf-8",
+            "cache-control": "no-cache, no-transform",
+            connection: "keep-alive"
+          });
+          return streamCompletedResponse(res, response);
+        }
+        return json(res, 200, response);
+      } catch (error) {
+        errorName = error?.name || "Error";
+        if (clientAbort.signal.aborted) {
+          status = 499;
+          outcome = "client_disconnected";
+        } else if (error?.name === "TimeoutError") {
+          status = 504;
+          outcome = "upstream_timeout";
+        } else {
+          status = error.status || 502;
+          outcome = status < 500 ? "invalid_request" : "upstream_error";
+        }
+        if (!res.destroyed && !res.writableEnded) {
+          openAiError(res, status, error.message || "Proxy failure");
+        }
+      } finally {
+        req.off("aborted", abortForDisconnect);
+        res.off("close", abortForDisconnect);
+        writeRequestLog(logger, status >= 500 ? "error" : "info", {
+          requestId,
+          status,
+          outcome,
+          durationMs: Date.now() - startedAt,
+          ...metrics,
+          ...(errorName ? { errorName } : {})
+        });
       }
-      return json(res, 200, response);
     } catch (error) {
       if (res.headersSent) {
         res.destroy(error);

@@ -45,6 +45,37 @@ test("translates Responses function-call history back to Chat messages", () => {
   assert.deepEqual(messages[1], { role: "tool", tool_call_id: "call_1", content: "contents" });
 });
 
+test("preserves Responses image inputs as Chat Completions image_url blocks", () => {
+  const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
+  const messages = responsesInputToMessages({
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "What is shown?" },
+          { type: "input_image", image_url: dataUrl, detail: "high" }
+        ]
+      }
+    ]
+  });
+
+  assert.deepEqual(messages[0].content, [
+    { type: "text", text: "What is shown?" },
+    { type: "image_url", image_url: { url: dataUrl, detail: "high" } }
+  ]);
+  const textParts = messages[0].content.filter((part) => part.type === "text");
+  assert.equal(textParts.some((part) => part.text.includes("base64")), false);
+});
+
+test("rejects image file IDs instead of flattening them into prompt text", () => {
+  assert.throws(
+    () => responsesInputToMessages({
+      input: [{ role: "user", content: [{ type: "input_image", file_id: "file_secret" }] }]
+    }),
+    /Image file IDs are not supported/
+  );
+});
+
 test("translates Grok tool calls to Responses function calls", () => {
   const response = chatResponseToResponse(
     { model: "grok-build", tools: [] },
