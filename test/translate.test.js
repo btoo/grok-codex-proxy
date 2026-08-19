@@ -52,6 +52,14 @@ test("wraps Responses custom tools as Chat Completions functions", () => {
   assert.equal(request.tools[0].type, "function");
   assert.equal(request.tools[0].function.name, "exec");
   assert.equal(request.tools[0].function.parameters.properties.input.type, "string");
+  assert.match(request.tools[0].function.description, /JavaScript source/);
+  assert.match(request.tools[0].function.description, /never send JSON tool arguments/);
+  assert.match(request.tools[0].function.description, /without Node\.js require\(\), import statements/);
+  assert.match(request.tools[0].function.description, /expose every result with text\(\.\.\.\)/);
+  assert.match(
+    request.tools[0].function.parameters.properties.input.description,
+    /Never pass JSON tool arguments/
+  );
   assert.deepEqual(request.tool_choice, { type: "function", function: { name: "exec" } });
 });
 
@@ -171,4 +179,31 @@ test("translates wrapped Grok exec calls to Responses custom tool calls", () => 
   assert.equal(response.output[0].call_id, "call_exec");
   assert.equal(response.output[0].name, "exec");
   assert.equal(response.output[0].input, "text(42);");
+});
+
+test("rejects malformed Grok custom tool arguments instead of executing them as JavaScript", () => {
+  assert.throws(
+    () => chatResponseToResponse(
+      { model: "grok-build", tools: [{ type: "custom", name: "exec" }] },
+      {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{
+              id: "call_exec",
+              type: "function",
+              function: { name: "exec", arguments: '{"cmd":"pwd"}' }
+            }]
+          },
+          finish_reason: "tool_calls"
+        }]
+      }
+    ),
+    (error) => {
+      assert.equal(error.status, 502);
+      assert.match(error.message, /expected \{"input":"\.\.\."\}/);
+      return true;
+    }
+  );
 });

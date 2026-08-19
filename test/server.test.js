@@ -108,6 +108,37 @@ test("serves a streaming Responses custom tool call", async () => {
   }, { fetchImpl });
 });
 
+test("returns an upstream error instead of executing malformed custom tool arguments", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: [{
+          id: "call_exec",
+          type: "function",
+          function: { name: "exec", arguments: '{"cmd":"pwd"}' }
+        }]
+      },
+      finish_reason: "tool_calls"
+    }]
+  }), { status: 200, headers: { "content-type": "application/json" } });
+
+  await withServer(async ({ port }) => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        input: "Use exec",
+        tools: [{ type: "custom", name: "exec", description: "Execute JavaScript" }]
+      })
+    });
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.match(body.error.message, /expected \{"input":"\.\.\."\}/);
+  }, { fetchImpl });
+});
+
 test("rejects the OpenAI bearer token when the local token is configured", async () => {
   await withServer(async ({ port }) => {
     const response = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
@@ -131,6 +162,9 @@ test("serves the Codex model-catalog shape", async () => {
     assert.equal(body.models[0].include_plugin_usage_instructions, true);
     assert.equal(body.models[0].include_apps_usage_instructions, true);
     assert.equal(body.models[0].tool_mode, "code_mode_only");
+    assert.match(body.models[0].base_instructions, /send JavaScript source in its input string/);
+    assert.match(body.models[0].base_instructions, /without require\(\), import statements/);
+    assert.match(body.models[0].base_instructions, /expose their results with text\(\.\.\.\)/);
     assert.equal(body.models[0].context_window, 500000);
     assert.equal(body.models[0].max_context_window, 500000);
     assert.equal(body.models[0].auto_compact_token_limit, 400000);
