@@ -134,7 +134,7 @@ test("serves the Codex model-catalog shape", async () => {
     assert.equal(body.models[0].context_window, 500000);
     assert.equal(body.models[0].max_context_window, 500000);
     assert.equal(body.models[0].auto_compact_token_limit, 400000);
-    assert.equal(body.models[0].effective_context_window_percent, 80);
+    assert.equal(body.models[0].effective_context_window_percent, 95);
     assert.deepEqual(body.models[0].truncation_policy, { mode: "tokens", limit: 400000 });
     assert.deepEqual(
       body.models[0].supported_reasoning_levels.map(({ effort }) => effort),
