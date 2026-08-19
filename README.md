@@ -4,6 +4,9 @@ This local-only adapter lets Codex speak the OpenAI Responses protocol while
 using the subscription-backed Grok CLI chat proxy. It does not use an xAI API
 key or xAI API credits.
 
+Requirements: macOS, Node.js 20 or newer, Codex CLI, Grok CLI, and an active
+Grok login with subscription access to Grok Build.
+
 ## Security model
 
 - The server binds to `127.0.0.1` by default.
@@ -69,8 +72,9 @@ Select it for one CLI run with `--profile grok-subscription` after the profile
 is installed, or choose the Grok model from Codex Desktop if it appears in the
 model picker.
 
-On this machine the provider is installed as the default for new Codex tasks.
-The prior OpenAI defaults are preserved in `~/.codex/openai.config.toml`.
+When installed with `--make-default`, the provider becomes the default for new
+Codex tasks and the prior OpenAI defaults remain available through
+`~/.codex/openai.config.toml`.
 
 CLI selection examples:
 
