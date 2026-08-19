@@ -1,0 +1,10 @@
+.DS_Store
+.env
+node_modules/
+*.log
+coverage/
+
+# Never commit copied authentication material.
+auth.json
+*.token
+*.cookies*
