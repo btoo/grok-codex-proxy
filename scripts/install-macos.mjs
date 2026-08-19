@@ -83,6 +83,7 @@ model = "grok-build"
 model_reasoning_effort = "none"
 model_context_window = 500000
 model_auto_compact_token_limit = 400000
+model_auto_compact_token_limit_scope = "body_after_prefix"
 ${providerBlock()}`;
 
 const servicePath = process.env.PATH || [path.dirname(grokBinary), path.dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
@@ -133,6 +134,7 @@ if (makeDefault) {
       `model_reasoning_effort = ${readTopLevel(config, "model_reasoning_effort", '"high"')}`,
       `model_context_window = ${readTopLevel(config, "model_context_window", "1000000")}`,
       `model_auto_compact_token_limit = ${readTopLevel(config, "model_auto_compact_token_limit", "950000")}`,
+      `model_auto_compact_token_limit_scope = ${readTopLevel(config, "model_auto_compact_token_limit_scope", '"total"')}`,
       ""
     ].join("\n");
     writeFileSync(path.join(codexHome, "openai.config.toml"), priorProfile, { mode: 0o600 });
@@ -146,6 +148,7 @@ if (makeDefault) {
   config = setTopLevel(config, "model_reasoning_effort", '"none"');
   config = setTopLevel(config, "model_context_window", "500000");
   config = setTopLevel(config, "model_auto_compact_token_limit", "400000");
+  config = setTopLevel(config, "model_auto_compact_token_limit_scope", '"body_after_prefix"');
   if (!config.includes("[model_providers.grok_subscription]")) config += providerBlock();
   writeFileSync(configPath, config, { mode: 0o600 });
 }

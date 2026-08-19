@@ -177,7 +177,7 @@ export function createProxyServer(options = {}) {
               context_window: 500000,
               max_context_window: 500000,
               auto_compact_token_limit: 400000,
-              effective_context_window_percent: 80,
+              effective_context_window_percent: 95,
               experimental_supported_tools: [],
               input_modalities: ["text", "image"],
               supports_search_tool: false,
