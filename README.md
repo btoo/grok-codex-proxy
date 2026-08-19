@@ -30,7 +30,8 @@ Defaults:
 
 - Address: `http://127.0.0.1:62774/v1`
 - Local bearer token: `local-grok-subscription`
-- Public/upstream model: `grok-build`
+- Public Codex alias: `grok-build`
+- Upstream subscription model: `grok-4.6`
 
 Environment overrides include `HOST`, `PORT`, `GROK_CODEX_PROXY_KEY`,
 `PUBLIC_MODEL`, `GROK_MODEL`, `GROK_BINARY`, `GROK_AUTH_PATH`, and
@@ -93,6 +94,12 @@ The Desktop app reads the default selection from `~/.codex/config.toml` for
 new tasks. Restart the app if the model picker or a newly created task still
 shows the prior provider.
 
+The proxy advertises the Grok model as a Codex Code Mode model. This lets
+Codex expose its custom `exec` tool, including plugin-backed capabilities such
+as the in-app browser. Model capabilities are cached when a task starts, so a
+task created before installing or upgrading this support must be recreated
+(or Codex restarted) before it can use Code Mode tools.
+
 ## Background service
 
 The portable installer uses the macOS LaunchAgent
@@ -115,14 +122,18 @@ the refreshed token automatically.
 
 ## Current scope
 
-- Responses text output
+- Responses text output through subscription-backed Grok 4.6
 - Responses image input through structured Chat Completions `image_url` blocks
+- Desktop-selectable reasoning effort (`none`, `low`, `medium`, `high`, `xhigh`)
 - Function tool calls and function-call outputs
+- Code Mode custom tool calls, bridged through Grok-compatible function calls
+- Plugin and app usage instructions, including in-app browser workflows
 - Responses SSE event framing (buffered upstream; emitted after Grok completes)
 - Grok OAuth refresh retry
 - Sanitized per-request timing, size, tool, image, status, and timeout logs
 - Upstream cancellation when the Codex client disconnects
 
 The adapter intentionally ignores provider-native `web_search` tools because
-Codex cannot execute those as local function calls. All ordinary Codex function
-tools are forwarded.
+Codex cannot execute those as local function calls. Ordinary Codex function
+tools are forwarded, while Responses custom tools are wrapped as functions for
+Grok and restored to custom tool calls before Codex executes them.
